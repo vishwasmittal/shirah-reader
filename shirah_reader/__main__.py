@@ -1019,6 +1019,46 @@ class RSVPUtils:
             "word_idx": word_idx,
         }
 
+    @staticmethod
+    def render_word(chwin, wpm, word, window_width, window_hight):
+        # chwin.clear()
+        wps = wpm / 60.0
+        word_len = len(word)
+        t_wait_sec = RSVPUtils.get_wait_time_for_word(word, wps)
+        highlight_letter_index = min(4, round(word_len / 2))
+        spaces = abs(4 - highlight_letter_index) * " "
+        wi_cn = round(window_width / 2) - 5
+        chwin.addstr(
+            round(window_hight / 2), wi_cn + len(spaces), word[:highlight_letter_index]
+        )
+        chwin.addstr(
+            round(window_hight / 2),
+            wi_cn + len(word[:highlight_letter_index]) + len(spaces),
+            word[highlight_letter_index],
+            curses.color_pair(197),
+        )
+        chwin.addstr(
+            round(window_hight / 2),
+            wi_cn + len(word[:highlight_letter_index]) + 1 + len(spaces),
+            word[highlight_letter_index + 1 :],
+        )
+
+        if "." in word:
+            time.sleep(0.2)
+        if (
+            "," in word
+            or "'" in word
+            or '"' in word
+            or "`" in word
+            or "-" in word
+            or "(" in word
+            or ")" in word
+            or ":" in word
+        ):
+            time.sleep(0.1)
+        time.sleep(t_wait_sec)
+        # chwin.refresh()
+
 
 def rsvp(content, y):
     global wpm
@@ -1040,12 +1080,14 @@ def rsvp(content, y):
     chwin.nodelay(no_delay_flag)
     no_distract_mode = False
     is_distraction_visible = False
+    pause_after_operation = False
     while line_idx < total_lines:
         try:
             line = content[line_idx].split()
             words_in_line = len(line)
             while word_idx < words_in_line:
                 try:
+                    chwin.clear()
                     if not no_distract_mode:
                         # Print Reading stats
                         is_distraction_visible = True
@@ -1062,10 +1104,27 @@ def rsvp(content, y):
                         )
                         # render 3 lines (for reference)
                         if line_idx > 0:
+                            # line before word
                             chwin.addstr(hi - 3, 0, content[line_idx - 1])
-                        chwin.addstr(hi - 2, 0, content[line_idx])
                         if line_idx < len(content) - 1:
+                            # line after word
                             chwin.addstr(hi - 1, 0, content[line_idx + 1])
+
+                        # line containing word
+                        prefix, prefix_start_pos = " ".join(line[:word_idx]), 0
+                        word, word_start_pos = line[word_idx], (
+                            len(prefix) + 1 if len(prefix) else 0
+                        )
+                        suffix, suffix_start_pos = " ".join(line[word_idx + 1 :]), (
+                            word_start_pos + len(word) + 1
+                        )
+
+                        chwin.addstr(hi - 2, prefix_start_pos, prefix)
+                        chwin.addstr(
+                            hi - 2, word_start_pos, word, curses.color_pair(197)
+                        )
+                        chwin.addstr(hi - 2, suffix_start_pos, suffix)
+
                     elif is_distraction_visible:
                         # clear RSVP distractions by overwriting on them
                         chwin.addstr(0, 0, " " * wi)
@@ -1073,6 +1132,20 @@ def rsvp(content, y):
                         chwin.addstr(hi - 2, 0, " " * wi)
                         chwin.addstr(hi - 1, 0, " " * (wi - 1))
                         is_distraction_visible = False
+
+                    RSVPUtils.render_word(
+                        chwin=chwin,
+                        wpm=wpm,
+                        word=line[word_idx],
+                        window_width=wi,
+                        window_hight=hi,
+                    )
+                    chwin.refresh()
+                    if pause_after_operation is True:
+                        # pause after operation so that brain can get time
+                        # to adjust to the change.
+                        time.sleep(0.3)
+                        pause_after_operation = False
 
                     user_input = chwin.getkey()
                     if user_input == " ":
@@ -1095,53 +1168,18 @@ def rsvp(content, y):
                     words_in_line = len(line)
                     if res["operation"] == RSVP_SCREEN_OPS.QUIT:
                         return line_idx
-                    if res["operation"] == RSVP_SCREEN_OPS.TOGGLE_NO_DISTRACT_MODE:
+                    elif res["operation"] == RSVP_SCREEN_OPS.TOGGLE_NO_DISTRACT_MODE:
                         no_distract_mode = not no_distract_mode
-                    continue
+                        continue
+                    elif res["operation"] == RSVP_SCREEN_OPS.CHANGE_READING_POS:
+                        pause_after_operation = True
+                        continue
                 except ValueError:
                     continue
                 except (curses.error) as e:
                     if str(e) != "no input":
                         raise e
 
-                word = line[word_idx]
-                wps = wpm / 60.0
-                chwin.clear()
-                word_len = len(word)
-                t_wait_sec = RSVPUtils.get_wait_time_for_word(word, wps)
-                highlight_letter_index = min(4, round(word_len / 2))
-                spaces = abs(4 - highlight_letter_index) * " "
-                wi_cn = round(wi / 2) - 5
-                chwin.addstr(
-                    round(hi / 2), wi_cn + len(spaces), word[:highlight_letter_index]
-                )
-                chwin.addstr(
-                    round(hi / 2),
-                    wi_cn + len(word[:highlight_letter_index]) + len(spaces),
-                    word[highlight_letter_index],
-                    curses.color_pair(197),
-                )
-                chwin.addstr(
-                    round(hi / 2),
-                    wi_cn + len(word[:highlight_letter_index]) + 1 + len(spaces),
-                    word[highlight_letter_index + 1 :],
-                )
-
-                if "." in word:
-                    time.sleep(0.2)
-                if (
-                    "," in word
-                    or "'" in word
-                    or '"' in word
-                    or "`" in word
-                    or "-" in word
-                    or "(" in word
-                    or ")" in word
-                    or ":" in word
-                ):
-                    time.sleep(0.1)
-                time.sleep(t_wait_sec)
-                chwin.refresh()
                 word_idx += 1
 
             word_idx = 0
