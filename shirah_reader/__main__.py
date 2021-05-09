@@ -40,6 +40,7 @@ import sys
 import re
 import os
 import textwrap
+import enum
 import json
 import tempfile
 import shutil
@@ -928,6 +929,94 @@ def toc(src, index):
     return "Table of Contents", src, index, K["TableOfContents"]
 
 
+class RSVP_SCREEN_OPS(enum.Enum):
+    QUIT = 0
+    CHANGE_READING_POS = 1
+    CHANGE_READING_SPEED = 2
+
+
+class RSVPUtils:
+    @staticmethod
+    def get_wait_time_for_word(word, wps):
+        return (1 / wps) * (1 + syllables.estimate(word) ** 2 / 100)
+
+    def process_rsvp_input(user_input, content, line_idx, word_idx, wpm):
+        """
+        - h: go back 5 words
+        - H: go back 20 words
+        - l: go forward 5 words
+        - L: go forward 20 words
+        - q: quit
+        - s: decrease wpm by 10 words (min speed: 1)
+        - d: increase wpm by 10 words
+        """
+
+        def go_back_n_words(n, content, line_idx, word_idx):
+            word_idx = word_idx - n
+            if word_idx >= 0:
+                return line_idx, word_idx
+            else:
+                line_idx = line_idx - 1
+                if line_idx < 0:
+                    line_idx, word_idx = 0, 0
+                    return line_idx, word_idx
+                else:
+                    n = -word_idx
+                    word_idx = len(content[line_idx].split())
+                    return go_back_n_words(n, content, line_idx, word_idx)
+
+        def go_forward_n_words(n, content, line_idx, word_idx):
+            word_idx += n
+            curr_line_len = len(content[line_idx].split())
+            if word_idx < curr_line_len:
+                return line_idx, word_idx
+            elif line_idx == len(content) - 1:
+                return line_idx, curr_line_len - 1
+            else:
+                # NOTE: line_idx can't be >= len(content)
+                n = word_idx - curr_line_len
+                line_idx += 1
+                word_idx = 0
+                return go_forward_n_words(n, content, line_idx, word_idx)
+
+        if user_input == "q":
+            operation = RSVP_SCREEN_OPS.QUIT
+        elif user_input == "h":
+            # go back 5 words
+            operation = RSVP_SCREEN_OPS.CHANGE_READING_POS
+            line_idx, word_idx = go_back_n_words(5, content, line_idx, word_idx)
+        elif user_input == "H":
+            # go back 20 words
+            operation = RSVP_SCREEN_OPS.CHANGE_READING_POS
+            line_idx, word_idx = go_back_n_words(20, content, line_idx, word_idx)
+        elif user_input == "l":
+            # go forward 5 words
+            operation = RSVP_SCREEN_OPS.CHANGE_READING_POS
+            line_idx, word_idx = go_forward_n_words(5, content, line_idx, word_idx)
+        elif user_input == "L":
+            # go forward 20 words
+            operation = RSVP_SCREEN_OPS.CHANGE_READING_POS
+            line_idx, word_idx = go_forward_n_words(20, content, line_idx, word_idx)
+        elif user_input == "s":
+            operation = RSVP_SCREEN_OPS.CHANGE_READING_SPEED
+            wpm = max(1, wpm - 10)
+        elif user_input == "d":
+            operation = RSVP_SCREEN_OPS.CHANGE_READING_SPEED
+            if wpm == 1:
+                wpm = 10
+            else:
+                wpm += 10
+        else:
+            raise ValueError(f"Unknown user input: {user_input}")
+
+        return {
+            "operation": operation,
+            "wpm": wpm,
+            "line_idx": line_idx,
+            "word_idx": word_idx,
+        }
+
+
 def rsvp(content, y):
     global wpm
     curses.start_color()
@@ -941,14 +1030,58 @@ def rsvp(content, y):
     if COLORSUPPORT:
         chwin.bkgd(SCREEN.getbkgd())
 
-    for i, text in enumerate(content[y:]):
+    line_idx = y
+    total_lines = len(content)
+    word_idx = 0
+    no_delay_flag = True
+    chwin.nodelay(no_delay_flag)
+    while line_idx < total_lines:
         try:
-            time.sleep(0.1)
-            for j, word in enumerate(text.strip().split()):
+            line = content[line_idx].split()
+            words_in_line = len(line)
+            while word_idx < words_in_line:
+                try:
+                    chwin.addstr(
+                        0,
+                        0,
+                        (
+                            f"DEBUG_INFO:"
+                            f"\tline: {line_idx:05}/{len(content):05}"
+                            f"\tword: {word_idx:02}/{len(content[line_idx].split()):02}"
+                            f"\tWPM: {wpm:04}"
+                        ),
+                    )
+                    user_input = chwin.getkey()
+                    if user_input == " ":
+                        no_delay_flag = not no_delay_flag
+                        chwin.nodelay(no_delay_flag)
+                        continue
+                    res: dict = RSVPUtils.process_rsvp_input(
+                        user_input=user_input,
+                        content=content,
+                        line_idx=line_idx,
+                        word_idx=word_idx,
+                        wpm=wpm,
+                    )
+                    line_idx, word_idx, wpm = (
+                        res["line_idx"],
+                        res["word_idx"],
+                        res["wpm"],
+                    )
+                    line = content[line_idx].split()
+                    words_in_line = len(line)
+                    if res["operation"] == RSVP_SCREEN_OPS.QUIT:
+                        return line_idx
+                    continue
+                except (curses.error, ValueError):
+                    user_input = None
+                    pass
+
+                word = line[word_idx]
                 wps = wpm / 60.0
                 chwin.clear()
                 word_len = len(word)
-                t_wait_sec = (1 / wps) * (1 + syllables.estimate(word) ** 2 / 100)
+                t_wait_sec = RSVPUtils.get_wait_time_for_word(word, wps)
                 highlight_letter_index = min(4, round(word_len / 2))
                 spaces = abs(4 - highlight_letter_index) * " "
                 wi_cn = round(wi / 2) - 5
@@ -966,6 +1099,14 @@ def rsvp(content, y):
                     wi_cn + len(word[:highlight_letter_index]) + 1 + len(spaces),
                     word[highlight_letter_index + 1 :],
                 )
+
+                # render 3 lines (for reference)
+                if line_idx > 0:
+                    chwin.addstr(hi - 3, 0, content[line_idx - 1])
+                chwin.addstr(hi - 2, 0, content[line_idx])
+                if line_idx < len(content) - 1:
+                    chwin.addstr(hi - 1, 0, content[line_idx + 1])
+
                 if "." in word:
                     time.sleep(0.2)
                 if (
@@ -978,20 +1119,31 @@ def rsvp(content, y):
                     or ")" in word
                     or ":" in word
                 ):
-                    time.sleep(0.15)
+                    time.sleep(0.1)
                 time.sleep(t_wait_sec)
                 chwin.refresh()
+                word_idx += 1
+
+            word_idx = 0
+            line_idx += 1
         except KeyboardInterrupt as e:
+            if no_delay_flag is True:
+                no_delay_flag = False
+                chwin.nodelay(no_delay_flag)
             keybinding_msg = "Current wpm: " + str(wpm) + " Enter new wpm: "
             try:
                 option = input_prompt(keybinding_msg)
                 wpm = int(option)
             except ValueError as e:
-                return y + i
+                return line_idx
             except KeyboardInterrupt as e:
-                return y + i
+                return line_idx
 
-    return None, None, None
+            if no_delay_flag is False:
+                no_delay_flag = True
+                chwin.nodelay(no_delay_flag)
+
+    return (None, None, None)
 
 
 @text_win
@@ -1811,6 +1963,8 @@ def reader(ebook, index, width, y, pctg, sect):
                     else:
                         return 0, width, y, None, ""
                 elif k in K["RSVP"]:
+                    SCREEN.clear()
+                    SCREEN.refresh()
                     y = rsvp(src_lines, y)
                 countstring = ""
 

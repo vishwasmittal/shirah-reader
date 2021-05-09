@@ -81,6 +81,15 @@ Key Binding:
     Mark pos to n   : b[n]
     Jump to pos n   : `[n]
     Switch colorsch : [default=0, dark=1, light=2]c
+
+RSVP Mode Keybindings
+    Go back 5 words     : h
+    Go back 20 words    : H
+    Go forward 5 words  : l
+    Go forward 20 words : L
+    Decrease wpm by 10  : s
+    Increase wpm by 10  : d
+    Quit                : q
 ```
 
 ### Main Goals
