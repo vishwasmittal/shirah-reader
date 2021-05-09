@@ -933,6 +933,7 @@ class RSVP_SCREEN_OPS(enum.Enum):
     QUIT = 0
     CHANGE_READING_POS = 1
     CHANGE_READING_SPEED = 2
+    TOGGLE_NO_DISTRACT_MODE = 3
 
 
 class RSVPUtils:
@@ -981,6 +982,8 @@ class RSVPUtils:
 
         if user_input == "q":
             operation = RSVP_SCREEN_OPS.QUIT
+        elif user_input == "t":
+            operation = RSVP_SCREEN_OPS.TOGGLE_NO_DISTRACT_MODE
         elif user_input == "h":
             # go back 5 words
             operation = RSVP_SCREEN_OPS.CHANGE_READING_POS
@@ -1035,22 +1038,42 @@ def rsvp(content, y):
     word_idx = 0
     no_delay_flag = True
     chwin.nodelay(no_delay_flag)
+    no_distract_mode = False
+    is_distraction_visible = False
     while line_idx < total_lines:
         try:
             line = content[line_idx].split()
             words_in_line = len(line)
             while word_idx < words_in_line:
                 try:
-                    chwin.addstr(
-                        0,
-                        0,
-                        (
-                            f"DEBUG_INFO:"
-                            f"\tline: {line_idx:05}/{len(content):05}"
-                            f"\tword: {word_idx:02}/{len(content[line_idx].split()):02}"
-                            f"\tWPM: {wpm:04}"
-                        ),
-                    )
+                    if not no_distract_mode:
+                        # Print Reading stats
+                        is_distraction_visible = True
+                        chwin.addstr(
+                            0,
+                            0,
+                            (
+                                f"Reading Stats:"
+                                f"\tLine: {line_idx:05}/{len(content):05}"
+                                f"\tWord: "
+                                f"{word_idx:02}/{len(content[line_idx].split()):02}"
+                                f"\tWPM: {wpm:04}"
+                            ),
+                        )
+                        # render 3 lines (for reference)
+                        if line_idx > 0:
+                            chwin.addstr(hi - 3, 0, content[line_idx - 1])
+                        chwin.addstr(hi - 2, 0, content[line_idx])
+                        if line_idx < len(content) - 1:
+                            chwin.addstr(hi - 1, 0, content[line_idx + 1])
+                    elif is_distraction_visible:
+                        # clear RSVP distractions by overwriting on them
+                        chwin.addstr(0, 0, " " * wi)
+                        chwin.addstr(hi - 3, 0, " " * wi)
+                        chwin.addstr(hi - 2, 0, " " * wi)
+                        chwin.addstr(hi - 1, 0, " " * (wi - 1))
+                        is_distraction_visible = False
+
                     user_input = chwin.getkey()
                     if user_input == " ":
                         no_delay_flag = not no_delay_flag
@@ -1072,10 +1095,14 @@ def rsvp(content, y):
                     words_in_line = len(line)
                     if res["operation"] == RSVP_SCREEN_OPS.QUIT:
                         return line_idx
+                    if res["operation"] == RSVP_SCREEN_OPS.TOGGLE_NO_DISTRACT_MODE:
+                        no_distract_mode = not no_distract_mode
                     continue
-                except (curses.error, ValueError):
-                    user_input = None
-                    pass
+                except ValueError:
+                    continue
+                except (curses.error) as e:
+                    if str(e) != "no input":
+                        raise e
 
                 word = line[word_idx]
                 wps = wpm / 60.0
@@ -1099,13 +1126,6 @@ def rsvp(content, y):
                     wi_cn + len(word[:highlight_letter_index]) + 1 + len(spaces),
                     word[highlight_letter_index + 1 :],
                 )
-
-                # render 3 lines (for reference)
-                if line_idx > 0:
-                    chwin.addstr(hi - 3, 0, content[line_idx - 1])
-                chwin.addstr(hi - 2, 0, content[line_idx])
-                if line_idx < len(content) - 1:
-                    chwin.addstr(hi - 1, 0, content[line_idx + 1])
 
                 if "." in word:
                     time.sleep(0.2)
