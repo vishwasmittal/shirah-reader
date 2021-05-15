@@ -94,13 +94,20 @@ RSVP Mode Keybindings
     Toggle no distract mode : t
 ```
 
-### Main Goals
+### [OLD] Main Goals
 - [x] Read txt
 - [x] Read epubs
 - [x] Pause
 - [x] Save progress
 - [x] Progress bar.
 - [x] Chapter-wise Navigation
+
+### TODOs
+- [] Fix bug that causes RSVP to crash at the end of chapter/pages.
+- [] Fix total numbers lines/words shown in RSVP. it is shown only
+ for current chapter/page.
+- [] Collect and save reading reading stats (reading speed, number
+ of words) to see improvement over time
 
 ## Name
 Named after the marathi name for the sweet dish [Kesari Bhat](https://en.wikipedia.org/wiki/Kesari_bat)
