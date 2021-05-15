@@ -1201,7 +1201,7 @@ def rsvp(content, y):
                 no_delay_flag = True
                 chwin.nodelay(no_delay_flag)
 
-    return (None, None, None)
+    return line_idx
 
 
 @text_win
@@ -2079,6 +2079,8 @@ def preread(stdscr, file):
     ebook = det_ebook_cls(file)
 
     try:
+        # Doc: load previously saved state. If no
+        # state found, read from start with default options.
         if ebook.path in STATE["States"]:
             idx = STATE["States"][ebook.path]["index"]
             width = STATE["States"][ebook.path]["width"]
@@ -2122,12 +2124,15 @@ def main():
         args += sys.argv[1:]
 
     if len({"-h", "--help"} & set(args)) != 0:
+        # Doc: print help
         print(__doc__.rstrip())
         sys.exit()
 
+    # Doc: load saved state and config
     loadstate()
 
     if len({"-v", "--version", "-V"} & set(args)) != 0:
+        # Doc: print version
         print("Startup file loaded:")
         print(CFGFILE)
         print(STATEFILE)
@@ -2139,21 +2144,25 @@ def main():
         sys.exit()
 
     if len({"-d"} & set(args)) != 0:
+        # Doc: dump complete ebook to stdout
         args.remove("-d")
         dump = True
     else:
+        # Doc: don't dump the ebook
         dump = False
 
     if args == []:
+        # Doc: if no file path given then try to load last read file
         file = STATE["LastRead"]
         if not os.path.isfile(file):
-            # print(__doc__)
             sys.exit("ERROR: Found no last read file.")
 
     elif os.path.isfile(args[0]):
+        # Doc: if file path given, use it
         file = args[0]
 
     else:
+        # Doc: NOTE: not sure what this is doing
         file = None
         todel = []
         xitmsg = 0
@@ -2205,6 +2214,7 @@ def main():
             sys.exit(xitmsg)
 
     if dump:
+        # Doc: dump ebook here
         ebook = det_ebook_cls(file)
         try:
             try:
@@ -2228,6 +2238,7 @@ def main():
         sys.exit()
 
     else:
+        # Doc: (try to) render the book
         if termc < 22 or termr < 12:
             sys.exit("ERROR: Screen was too small (min 22cols x 12rows).")
         curses.wrapper(preread, file)
